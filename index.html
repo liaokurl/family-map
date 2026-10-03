@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="家人定位">
+<meta name="apple-mobile-web-app-title" content="四邊形の家人定位">
 <meta name="theme-color" content="#FFF8E7">
-<title>家人定位</title>
+<title>四邊形の家人定位</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root { --cream:#FFF8E7; --cream-dark:#F3E6C8; --leaf:#6FBF73; --leaf-dark:#4E9F58; --leaf-light:#DDF2D8; --bark:#6B4F3A; --bark-light:#A68B73; }
@@ -58,6 +58,8 @@
   .chip { flex:none; background:#fff; border:2px solid var(--leaf-light); border-radius:24px; padding:10px 18px;
     text-align:center; font-size:14px; line-height:1.5; box-shadow:0 3px 10px rgba(107,79,58,.16); cursor:pointer; }
   .chip small { display:block; color:var(--bark-light); font-size:13px; }
+  .ver { font-size:13px; color:var(--bark-light); margin-top:10px; }
+  .ver.top-title { margin:0 0 2px; color:var(--leaf-dark); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bubble { background:none; border:0; }
   .leaflet-tile-pane { filter:sepia(.22) saturate(.85) brightness(1.04); }
   .leaflet-control-attribution { font-size:10px; background:rgba(255,248,231,.8) !important; }
@@ -70,19 +72,21 @@
     <svg width="72" height="72" viewBox="24 22 60 66"><path fill="#fff" d="M54 28C40.7 28 30 38.5 30 51.5 30 66 46 76 54 84c8-8 24-18 24-32.5C78 38.5 67.3 28 54 28Z"/><circle cx="54" cy="51.5" r="19" fill="#FFB8A1"/><circle cx="47" cy="49" r="2.6" fill="#6B4F3A"/><circle cx="61" cy="49" r="2.6" fill="#6B4F3A"/><path d="M48 56q6 6 12 0" fill="none" stroke="#6B4F3A" stroke-width="2.4" stroke-linecap="round"/></svg>
   </div>
   <div class="card">
-    <h1>歡迎回家 🌿</h1>
+    <h1>四邊形の家人定位</h1>
     <p>和家人分享彼此的位置，只有家人看得到。</p>
     <input id="inputName" class="field" maxlength="12" placeholder="你的名字（例如：爸爸）" autocomplete="off">
     <input id="inputCode" class="field" maxlength="11" placeholder="輸入家庭代碼" autocomplete="off" autocapitalize="characters" spellcheck="false">
     <button id="btnJoin" class="btn primary">🤝 加入家庭</button>
     <button id="btnCreate" class="btn tonal">🏡 建立新的家庭</button>
     <div id="msg" class="msg"></div>
+    <div class="ver app-title"></div>
   </div>
 </div>
 
 <div id="main" class="hidden">
   <div id="map"></div>
   <div class="top">
+    <div class="ver top-title app-title"></div>
     <div class="row">
       <div id="txtFamily" class="code"></div>
       <button id="btnInvite" class="pill">邀請</button>
@@ -102,6 +106,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
+// 網頁版的版本號：每次更新網頁時跟著改
+const APP_VERSION = "V1.05";
+const APP_TITLE = "四邊形の家人定位 ---車干製" + APP_VERSION + "版";
+
 // ====== Firebase 設定（從 Firebase 主控台的「網頁應用程式」複製） ======
 const firebaseConfig = {
   apiKey: "AIzaSyA-TKddLQ02CfdF0qWDDguUVLwBJK539ww",
@@ -306,7 +314,7 @@ async function leave() {
 }
 
 async function invite() {
-  const text = "來加入我們家的「家人定位」🏡\n家庭代碼：" + pretty(store.get("code")) + "\n（這組代碼只給家人，請不要外流）\n" + location.href.split("#")[0];
+  const text = "來加入「四邊形の家人定位」🏡\n家庭代碼：" + pretty(store.get("code")) + "\n（這組代碼只給家人，請不要外流）\n" + location.href.split("#")[0];
   try {
     if (navigator.share) await navigator.share({ text: text });
     else { await navigator.clipboard.writeText(text); $("hint").textContent = "已複製邀請內容，貼給家人吧。"; }
@@ -314,6 +322,7 @@ async function invite() {
 }
 
 function boot() {
+  document.querySelectorAll(".app-title").forEach((el) => { el.textContent = APP_TITLE; });
   if (!firebaseConfig) {
     $("setup").classList.remove("hidden");
     busy(true);

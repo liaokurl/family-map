@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="家人定位">
+<meta name="theme-color" content="#FFF8E7">
+<title>家人定位</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --cream:#FFF8E7; --cream-dark:#F3E6C8; --leaf:#6FBF73; --leaf-dark:#4E9F58; --leaf-light:#DDF2D8; --bark:#6B4F3A; --bark-light:#A68B73; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--cream); color:var(--bark);
+    font-family: "PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; }
+  button, input { font:inherit; color:inherit; }
+  .hidden { display:none !important; }
+
+  /* 設定畫面 */
+  #setup { min-height:100%; background:var(--leaf-light); display:flex; flex-direction:column; align-items:center;
+    padding:calc(24px + env(safe-area-inset-top)) 24px 24px; }
+  .logo { width:104px; height:104px; border-radius:30px; background:var(--leaf); display:grid; place-items:center; margin-top:16px; }
+  .card { width:100%; max-width:420px; margin-top:20px; background:var(--cream); border:3px solid var(--cream-dark);
+    border-radius:28px; padding:24px; text-align:center; }
+  .card h1 { margin:0; font-size:26px; }
+  .card p { margin:6px 0 0; color:var(--bark-light); font-size:15px; }
+  .field { width:100%; height:56px; margin-top:16px; padding:0 20px; background:#fff; border:2px solid var(--cream-dark);
+    border-radius:22px; font-size:17px; outline:none; }
+  .field:focus { border-color:var(--leaf); }
+  #inputCode { text-align:center; letter-spacing:.15em; text-transform:uppercase; }
+  .btn { width:100%; height:58px; margin-top:14px; border:0; border-radius:29px; font-size:17px; font-weight:700; cursor:pointer; }
+  .btn.primary { background:var(--leaf); color:#fff; }
+  .btn.tonal { background:var(--leaf-light); }
+  .btn:disabled { opacity:.5; }
+  .msg { min-height:22px; margin-top:12px; color:#C0563F; font-size:14px; }
+
+  /* 地圖畫面 */
+  #main { position:fixed; inset:0; }
+  #map { position:absolute; inset:0; background:#f7f0dc; }
+  .top { position:absolute; z-index:1000; left:12px; right:12px; top:calc(12px + env(safe-area-inset-top));
+    background:var(--cream); border:3px solid var(--cream-dark); border-radius:28px; padding:10px 12px 10px 18px;
+    box-shadow:0 4px 14px rgba(107,79,58,.18); }
+  .top .row { display:flex; align-items:center; gap:6px; }
+  .top .code { flex:1; font-size:17px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pill { height:40px; padding:0 18px; border:0; border-radius:20px; background:var(--leaf-light); font-weight:700; cursor:pointer; }
+  .pill.text { background:none; color:var(--bark-light); font-weight:400; padding:0 10px; }
+  .share { display:flex; align-items:center; justify-content:space-between; margin-top:4px; color:var(--bark-light); font-size:14px; }
+  .switch { position:relative; width:52px; height:30px; flex:none; }
+  .switch input { opacity:0; width:100%; height:100%; margin:0; position:absolute; z-index:1; cursor:pointer; }
+  .switch span { position:absolute; inset:0; background:var(--cream-dark); border-radius:15px; transition:.2s; }
+  .switch span::after { content:""; position:absolute; left:4px; top:4px; width:22px; height:22px; border-radius:50%; background:#fff; transition:.2s; }
+  .switch input:checked + span { background:var(--leaf); }
+  .switch input:checked + span::after { transform:translateX(22px); }
+  .hint { margin-top:4px; font-size:12px; color:var(--bark-light); }
+  .members { position:absolute; z-index:1000; left:0; right:0; bottom:calc(16px + env(safe-area-inset-bottom));
+    display:flex; gap:10px; padding:6px 12px; overflow-x:auto; scrollbar-width:none; }
+  .members::-webkit-scrollbar { display:none; }
+  .chip { flex:none; background:#fff; border:2px solid var(--leaf-light); border-radius:24px; padding:10px 18px;
+    text-align:center; font-size:14px; line-height:1.5; box-shadow:0 3px 10px rgba(107,79,58,.16); cursor:pointer; }
+  .chip small { display:block; color:var(--bark-light); font-size:13px; }
+  .bubble { background:none; border:0; }
+  .leaflet-control-attribution { font-size:10px; background:rgba(255,248,231,.8) !important; }
+</style>
+</head>
+<body>
+
+<div id="setup" class="hidden">
+  <div class="logo">
+    <svg width="72" height="72" viewBox="24 22 60 66"><path fill="#fff" d="M54 28C40.7 28 30 38.5 30 51.5 30 66 46 76 54 84c8-8 24-18 24-32.5C78 38.5 67.3 28 54 28Z"/><circle cx="54" cy="51.5" r="19" fill="#FFB8A1"/><circle cx="47" cy="49" r="2.6" fill="#6B4F3A"/><circle cx="61" cy="49" r="2.6" fill="#6B4F3A"/><path d="M48 56q6 6 12 0" fill="none" stroke="#6B4F3A" stroke-width="2.4" stroke-linecap="round"/></svg>
+  </div>
+  <div class="card">
+    <h1>歡迎回家 🌿</h1>
+    <p>和家人分享彼此的位置，只有家人看得到。</p>
+    <input id="inputName" class="field" maxlength="12" placeholder="你的名字（例如：爸爸）" autocomplete="off">
+    <input id="inputCode" class="field" maxlength="11" placeholder="輸入家庭代碼" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <button id="btnJoin" class="btn primary">🤝 加入家庭</button>
+    <button id="btnCreate" class="btn tonal">🏡 建立新的家庭</button>
+    <div id="msg" class="msg"></div>
+  </div>
+</div>
+
+<div id="main" class="hidden">
+  <div id="map"></div>
+  <div class="top">
+    <div class="row">
+      <div id="txtFamily" class="code"></div>
+      <button id="btnInvite" class="pill">邀請</button>
+      <button id="btnLeave" class="pill text">離開</button>
+    </div>
+    <div class="share">
+      <span>分享我的位置</span>
+      <label class="switch"><input id="switchShare" type="checkbox"><span></span></label>
+    </div>
+    <div id="hint" class="hint">網頁版只有在這個畫面開著時，才會更新你的位置。</div>
+  </div>
+  <div id="members" class="members"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+// ====== Firebase 設定（從 Firebase 主控台的「網頁應用程式」複製） ======
+const firebaseConfig = {
+  apiKey: "AIzaSyA-TKddLQ02CfdF0qWDDguUVLwBJK539ww",
+  authDomain: "family-locator-ffaae.firebaseapp.com",
+  projectId: "family-locator-ffaae",
+  storageBucket: "family-locator-ffaae.firebasestorage.app",
+  messagingSenderId: "1035976261843",
+  appId: "1:1035976261843:web:d886b1ed9b9500ae2cd426"
+};
+// =====================================================================
+
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  clear() { try { ["name", "code", "sharing"].forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+};
+const CODE_LEN = 10;
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const PALETTE = ["#FFB8A1", "#A8DCF0", "#FFE08A", "#C9B6F2", "#A6E3B8", "#FFC2DC"];
+
+let auth, db, map, unsubscribe = null, watchId = null, lastUpload = 0;
+let members = [], markers = {}, fitted = false;
+
+function say(text) { $("msg").textContent = text || ""; }
+function busy(on) { $("btnJoin").disabled = on; $("btnCreate").disabled = on; }
+function pretty(code) { return code.length === CODE_LEN ? code.slice(0, 5) + "-" + code.slice(5) : code; }
+function membersRef(code) { return db.collection("families").doc(code).collection("members"); }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function newCode() {
+  const r = new Uint32Array(CODE_LEN);
+  crypto.getRandomValues(r);
+  return Array.from(r, (n) => ALPHABET[n % ALPHABET.length]).join("");
+}
+
+async function enter(isNew) {
+  const name = $("inputName").value.trim();
+  if (!name) return say("先告訴我你的名字吧 🌱");
+  let code;
+  if (isNew) {
+    code = newCode();
+  } else {
+    code = $("inputCode").value.trim().toUpperCase().replace(/[-\s]/g, "");
+    if (code.length !== CODE_LEN) return say("家庭代碼是 " + CODE_LEN + " 個字喔");
+  }
+  say(""); busy(true);
+  try {
+    if (!auth.currentUser) await auth.signInAnonymously();
+    const me = membersRef(code).doc(auth.currentUser.uid);
+    await me.set({ name: name, joinedAt: Date.now() });
+    if (!isNew) {
+      // 確認這個家庭裡真的有其他人，避免打錯代碼
+      const snap = await membersRef(code).get({ source: "server" });
+      if (snap.size <= 1) {
+        await me.delete();
+        busy(false);
+        return say("找不到這個家庭代碼，請再確認一次");
+      }
+    }
+    store.set("name", name); store.set("code", code); store.set("sharing", "1");
+    showMain();
+  } catch (e) {
+    busy(false);
+    say("連線失敗：" + (e && e.message ? e.message : e));
+  }
+}
+
+function showSetup() {
+  $("main").classList.add("hidden");
+  $("setup").classList.remove("hidden");
+  busy(false);
+}
+
+function showMain() {
+  $("setup").classList.add("hidden");
+  $("main").classList.remove("hidden");
+  $("txtFamily").textContent = "🏡 " + pretty(store.get("code"));
+  if (!map) {
+    map = L.map("map", { zoomControl: false, attributionControl: true }).setView([23.7, 121.0], 7);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      maxZoom: 20, subdomains: "abcd",
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    }).addTo(map);
+  }
+  setTimeout(() => map.invalidateSize(), 50);
+  listen();
+  const sharing = store.get("sharing") !== "0";
+  $("switchShare").checked = sharing;
+  if (sharing) startSharing();
+}
+
+function listen() {
+  if (unsubscribe) unsubscribe();
+  unsubscribe = membersRef(store.get("code")).onSnapshot((snap) => {
+    members = snap.docs.map((d) => {
+      const v = d.data();
+      return { uid: d.id, name: v.name || "？", lat: v.lat, lng: v.lng, battery: v.battery, updatedAt: v.updatedAt };
+    }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
+    render();
+  }, (err) => { console.log("listen error", err); });
+}
+
+function statusText(m) {
+  if (typeof m.updatedAt !== "number") return "等待位置中…";
+  const mins = Math.floor((Date.now() - m.updatedAt) / 60000);
+  const ago = mins < 1 ? "剛剛" : mins < 60 ? mins + " 分鐘前" : mins < 1440 ? Math.floor(mins / 60) + " 小時前" : Math.floor(mins / 1440) + " 天前";
+  return typeof m.battery === "number" ? ago + "・🔋" + m.battery + "%" : ago;
+}
+
+function bubbleIcon(name, color, isMe) {
+  const label = escapeHtml(name.length > 4 ? name.slice(0, 4) : name);
+  const tagFill = isMe ? "#6FBF73" : "#FFFFFF", tagText = isMe ? "#FFFFFF" : "#6B4F3A";
+  const html =
+    '<svg width="64" height="88" viewBox="0 0 64 88">' +
+    '<path d="M20 62 L32 86 L44 62 Z" fill="#fff"/>' +
+    '<circle cx="32" cy="44" r="30" fill="#fff"/>' +
+    '<circle cx="32" cy="44" r="26" fill="' + color + '"/>' +
+    '<circle cx="18" cy="50" r="5" fill="rgba(255,122,122,.33)"/><circle cx="46" cy="50" r="5" fill="rgba(255,122,122,.33)"/>' +
+    '<circle cx="23" cy="41" r="3" fill="#6B4F3A"/><circle cx="41" cy="41" r="3" fill="#6B4F3A"/>' +
+    '<path d="M26 49 Q32 55 38 49" fill="none" stroke="#6B4F3A" stroke-width="2.4" stroke-linecap="round"/>' +
+    '<rect x="6" y="1" width="52" height="18" rx="9" fill="' + tagFill + '"/>' +
+    '<text x="32" y="14.5" text-anchor="middle" font-size="12" font-weight="700" fill="' + tagText + '">' + label + "</text>" +
+    "</svg>";
+  return L.divIcon({ className: "bubble", html: html, iconSize: [64, 88], iconAnchor: [32, 86], popupAnchor: [0, -80] });
+}
+
+function render() {
+  if (!map) return;
+  const myUid = auth.currentUser ? auth.currentUser.uid : "";
+  const order = members.map((m) => m.uid).sort();
+  const alive = {};
+  members.forEach((m) => {
+    if (typeof m.lat !== "number" || typeof m.lng !== "number") return;
+    alive[m.uid] = true;
+    const color = PALETTE[order.indexOf(m.uid) % PALETTE.length];
+    const tag = m.name + "|" + color;
+    const popup = "<b>" + escapeHtml(m.name) + "</b><br>" + escapeHtml(statusText(m));
+    let mk = markers[m.uid];
+    if (!mk) {
+      mk = L.marker([m.lat, m.lng], { icon: bubbleIcon(m.name, color, m.uid === myUid) }).addTo(map).bindPopup(popup);
+      mk._tag = tag;
+      markers[m.uid] = mk;
+    } else {
+      mk.setLatLng([m.lat, m.lng]);
+      mk.setPopupContent(popup);
+      if (mk._tag !== tag) { mk.setIcon(bubbleIcon(m.name, color, m.uid === myUid)); mk._tag = tag; }
+    }
+  });
+  Object.keys(markers).forEach((uid) => { if (!alive[uid]) { map.removeLayer(markers[uid]); delete markers[uid]; } });
+
+  if (!fitted) {
+    const pts = members.filter((m) => typeof m.lat === "number" && typeof m.lng === "number").map((m) => [m.lat, m.lng]);
+    if (pts.length === 1) { map.setView(pts[0], 15); fitted = true; }
+    else if (pts.length > 1) { map.fitBounds(pts, { paddingTopLeft: [50, 150], paddingBottomRight: [50, 110], maxZoom: 16 }); fitted = true; }
+  }
+
+  const row = $("members");
+  row.innerHTML = "";
+  members.forEach((m) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.innerHTML = escapeHtml(m.uid === myUid ? m.name + "（我）" : m.name) + "<small>" + escapeHtml(statusText(m)) + "</small>";
+    chip.onclick = () => {
+      if (typeof m.lat !== "number") return;
+      map.setView([m.lat, m.lng], 16, { animate: true });
+      if (markers[m.uid]) markers[m.uid].openPopup();
+    };
+    row.appendChild(chip);
+  });
+}
+
+function startSharing() {
+  if (watchId !== null || !("geolocation" in navigator)) return;
+  watchId = navigator.geolocation.watchPosition((pos) => {
+    const now = Date.now();
+    if (now - lastUpload < 15000) return;
+    lastUpload = now;
+    const user = auth.currentUser, code = store.get("code");
+    if (!user || !code) return;
+    membersRef(code).doc(user.uid).set({
+      name: store.get("name"),
+      lat: pos.coords.latitude, lng: pos.coords.longitude,
+      accuracy: pos.coords.accuracy, updatedAt: now,
+    }, { merge: true }).catch((e) => console.log("upload failed", e));
+  }, (err) => {
+    $("hint").textContent = err.code === 1 ? "你沒有允許定位，所以家人看不到你的位置（仍然可以看家人）。" : "暫時取不到位置，稍後會再試。";
+  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+}
+
+function stopSharing() {
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+}
+
+async function leave() {
+  if (!confirm("要離開這個家庭嗎？\n離開後家人就看不到你的位置，你也看不到他們的。")) return;
+  stopSharing();
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  try { await membersRef(store.get("code")).doc(auth.currentUser.uid).delete(); } catch (e) {}
+  store.clear();
+  location.reload();
+}
+
+async function invite() {
+  const text = "來加入我們家的「家人定位」🏡\n家庭代碼：" + pretty(store.get("code")) + "\n（這組代碼只給家人，請不要外流）\n" + location.href.split("#")[0];
+  try {
+    if (navigator.share) await navigator.share({ text: text });
+    else { await navigator.clipboard.writeText(text); $("hint").textContent = "已複製邀請內容，貼給家人吧。"; }
+  } catch (e) {}
+}
+
+function boot() {
+  if (!firebaseConfig) {
+    $("setup").classList.remove("hidden");
+    busy(true);
+    return say("尚未填入 Firebase 設定。");
+  }
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+
+  $("btnJoin").onclick = () => enter(false);
+  $("btnCreate").onclick = () => enter(true);
+  $("btnLeave").onclick = leave;
+  $("btnInvite").onclick = invite;
+  $("switchShare").onchange = (e) => {
+    store.set("sharing", e.target.checked ? "1" : "0");
+    if (e.target.checked) startSharing(); else stopSharing();
+  };
+  setInterval(render, 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
+
+  let first = true;
+  auth.onAuthStateChanged((user) => {
+    if (!first) return;
+    first = false;
+    if (user && store.get("code")) showMain(); else showSetup();
+  });
+}
+boot();
+</script>
+</body>
+</html>

@@ -57,6 +57,10 @@
   .members::-webkit-scrollbar { display:none; }
   .chip { flex:none; background:#fff; border:2px solid var(--leaf-light); border-radius:24px; padding:10px 18px;
     text-align:center; font-size:14px; line-height:1.5; box-shadow:0 3px 10px rgba(107,79,58,.16); cursor:pointer; }
+  .chip { position:relative; }
+  .chip.stale { opacity:.45; }
+  .kick { position:absolute; top:-6px; right:-6px; width:24px; height:24px; border:0; border-radius:50%; background:#F3B3A6; color:#fff; font-size:12px; line-height:24px; padding:0; cursor:pointer; }
+  .members { padding-top:12px !important; }
   .chip small { display:block; color:var(--bark-light); font-size:13px; }
   .ver { font-size:13px; color:var(--bark-light); margin-top:10px; }
   .ver.top-title { margin:0 0 2px; color:var(--leaf-dark); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -89,7 +93,7 @@
     <div class="ver top-title app-title"></div>
     <div class="row">
       <div id="txtFamily" class="code"></div>
-      <button id="btnInvite" class="pill">邀請</button>
+      <button id="btnInvite" class="pill">複製代碼</button>
       <button id="btnLeave" class="pill text">離開</button>
     </div>
     <div class="share">
@@ -107,7 +111,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 // 網頁版的版本號：每次更新網頁時跟著改
-const APP_VERSION = "V1.05";
+const APP_VERSION = "V1.06";
 const APP_TITLE = "四邊形の家人定位 ---車干製" + APP_VERSION + "版";
 
 // ====== Firebase 設定（從 Firebase 主控台的「網頁應用程式」複製） ======
@@ -132,7 +136,10 @@ const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const PALETTE = ["#FFB8A1", "#A8DCF0", "#FFE08A", "#C9B6F2", "#A6E3B8", "#FFC2DC"];
 
 let auth, db, map, unsubscribe = null, watchId = null, lastUpload = 0;
-let members = [], markers = {}, fitted = false;
+let members = [], markers = {}, fitted = false, ownerUid = null;
+const STALE_MS = 24 * 60 * 60 * 1000;
+function hasPos(m) { return typeof m.lat === "number" && typeof m.lng === "number"; }
+function isStale(m) { return typeof m.updatedAt === "number" && Date.now() - m.updatedAt > STALE_MS; }
 
 function say(text) { $("msg").textContent = text || ""; }
 function busy(on) { $("btnJoin").disabled = on; $("btnCreate").disabled = on; }
@@ -161,6 +168,10 @@ async function enter(isNew) {
     if (!auth.currentUser) await auth.signInAnonymously();
     const me = membersRef(code).doc(auth.currentUser.uid);
     await me.set({ name: name, joinedAt: Date.now() });
+    if (isNew) {
+      // 記下建立者，之後只有建立者可以移除成員
+      db.collection("families").doc(code).set({ owner: auth.currentUser.uid, createdAt: Date.now() }).catch(() => {});
+    }
     if (!isNew) {
       // 確認這個家庭裡真的有其他人，避免打錯代碼
       const snap = await membersRef(code).get({ source: "server" });
@@ -197,6 +208,9 @@ function showMain() {
   }
   setTimeout(() => map.invalidateSize(), 50);
   listen();
+  db.collection("families").doc(store.get("code")).get()
+    .then((d) => { ownerUid = d.exists ? d.data().owner : null; render(); })
+    .catch(() => {});
   const sharing = store.get("sharing") !== "0";
   $("switchShare").checked = sharing;
   if (sharing) startSharing();
@@ -210,7 +224,15 @@ function listen() {
       return { uid: d.id, name: v.name || "？", lat: v.lat, lng: v.lng, battery: v.battery, updatedAt: v.updatedAt };
     }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
     render();
-  }, (err) => { console.log("listen error", err); });
+  }, (err) => {
+    console.log("listen error", err);
+    if (err && err.code === "permission-denied") {
+      stopSharing();
+      store.clear();
+      showSetup();
+      say("你已經不在這個家庭了，要用的話請重新加入。");
+    }
+  });
 }
 
 function statusText(m) {
@@ -243,7 +265,7 @@ function render() {
   const order = members.map((m) => m.uid).sort();
   const alive = {};
   members.forEach((m) => {
-    if (typeof m.lat !== "number" || typeof m.lng !== "number") return;
+    if (!hasPos(m) || isStale(m)) return;
     alive[m.uid] = true;
     const color = PALETTE[order.indexOf(m.uid) % PALETTE.length];
     const tag = m.name + "|" + color;
@@ -262,7 +284,7 @@ function render() {
   Object.keys(markers).forEach((uid) => { if (!alive[uid]) { map.removeLayer(markers[uid]); delete markers[uid]; } });
 
   if (!fitted) {
-    const pts = members.filter((m) => typeof m.lat === "number" && typeof m.lng === "number").map((m) => [m.lat, m.lng]);
+    const pts = members.filter((m) => hasPos(m) && !isStale(m)).map((m) => [m.lat, m.lng]);
     if (pts.length === 1) { map.setView(pts[0], 15); fitted = true; }
     else if (pts.length > 1) { map.fitBounds(pts, { paddingTopLeft: [50, 150], paddingBottomRight: [50, 110], maxZoom: 16 }); fitted = true; }
   }
@@ -271,13 +293,25 @@ function render() {
   row.innerHTML = "";
   members.forEach((m) => {
     const chip = document.createElement("div");
-    chip.className = "chip";
+    chip.className = "chip" + (isStale(m) ? " stale" : "");
     chip.innerHTML = escapeHtml(m.uid === myUid ? m.name + "（我）" : m.name) + "<small>" + escapeHtml(statusText(m)) + "</small>";
     chip.onclick = () => {
-      if (typeof m.lat !== "number") return;
+      if (!hasPos(m) || isStale(m)) return;
       map.setView([m.lat, m.lng], 16, { animate: true });
       if (markers[m.uid]) markers[m.uid].openPopup();
     };
+    if (ownerUid && ownerUid === myUid && m.uid !== myUid) {
+      const x = document.createElement("button");
+      x.className = "kick";
+      x.textContent = "✕";
+      x.title = "移出家庭";
+      x.onclick = (ev) => {
+        ev.stopPropagation();
+        if (!confirm("要把「" + m.name + "」移出家庭嗎？\n移除後對方就看不到任何人的位置。")) return;
+        membersRef(store.get("code")).doc(m.uid).delete().catch((e) => { $("hint").textContent = "移除失敗：" + (e.message || e); });
+      };
+      chip.appendChild(x);
+    }
     row.appendChild(chip);
   });
 }
@@ -290,11 +324,14 @@ function startSharing() {
     lastUpload = now;
     const user = auth.currentUser, code = store.get("code");
     if (!user || !code) return;
-    membersRef(code).doc(user.uid).set({
+    membersRef(code).doc(user.uid).update({
       name: store.get("name"),
       lat: pos.coords.latitude, lng: pos.coords.longitude,
       accuracy: pos.coords.accuracy, updatedAt: now,
-    }, { merge: true }).catch((e) => console.log("upload failed", e));
+    }).catch((e) => {
+      console.log("upload failed", e);
+      if (e && (e.code === "not-found" || e.code === "permission-denied")) stopSharing();
+    });
   }, (err) => {
     $("hint").textContent = err.code === 1 ? "你沒有允許定位，所以家人看不到你的位置（仍然可以看家人）。" : "暫時取不到位置，稍後會再試。";
   }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
@@ -314,11 +351,13 @@ async function leave() {
 }
 
 async function invite() {
-  const text = "來加入「四邊形の家人定位」🏡\n家庭代碼：" + pretty(store.get("code")) + "\n（這組代碼只給家人，請不要外流）\n" + location.href.split("#")[0];
+  const code = pretty(store.get("code"));
   try {
-    if (navigator.share) await navigator.share({ text: text });
-    else { await navigator.clipboard.writeText(text); $("hint").textContent = "已複製邀請內容，貼給家人吧。"; }
-  } catch (e) {}
+    await navigator.clipboard.writeText(code);
+    $("hint").textContent = "已複製家庭代碼 " + code;
+  } catch (e) {
+    try { if (navigator.share) await navigator.share({ text: code }); } catch (e2) {}
+  }
 }
 
 function boot() {

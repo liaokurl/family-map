@@ -111,7 +111,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 // 網頁版的版本號：每次更新網頁時跟著改
-const APP_VERSION = "V1.06";
+const APP_VERSION = "V1.07";
 const APP_TITLE = "四邊形の家人定位 ---車干製" + APP_VERSION + "版";
 
 // ====== Firebase 設定（從 Firebase 主控台的「網頁應用程式」複製） ======
@@ -221,7 +221,7 @@ function listen() {
   unsubscribe = membersRef(store.get("code")).onSnapshot((snap) => {
     members = snap.docs.map((d) => {
       const v = d.data();
-      return { uid: d.id, name: v.name || "？", lat: v.lat, lng: v.lng, battery: v.battery, updatedAt: v.updatedAt };
+      return { uid: d.id, name: v.name || "？", lat: v.lat, lng: v.lng, battery: v.battery, updatedAt: v.updatedAt, atPlace: v.atPlace === true };
     }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
     render();
   }, (err) => {
@@ -239,7 +239,8 @@ function statusText(m) {
   if (typeof m.updatedAt !== "number") return "等待位置中…";
   const mins = Math.floor((Date.now() - m.updatedAt) / 60000);
   const ago = mins < 1 ? "剛剛" : mins < 60 ? mins + " 分鐘前" : mins < 1440 ? Math.floor(mins / 60) + " 小時前" : Math.floor(mins / 1440) + " 天前";
-  return typeof m.battery === "number" ? ago + "・🔋" + m.battery + "%" : ago;
+  const text = typeof m.battery === "number" ? ago + "・🔋" + m.battery + "%" : ago;
+  return m.atPlace ? "🏠 " + text : text;
 }
 
 function bubbleIcon(name, color, isMe) {

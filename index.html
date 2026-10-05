@@ -111,7 +111,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 // 網頁版的版本號：每次更新網頁時跟著改
-const APP_VERSION = "V1.07";
+const APP_VERSION = "V1.08";
 const APP_TITLE = "四邊形の家人定位 ---車干製" + APP_VERSION + "版";
 
 // ====== Firebase 設定（從 Firebase 主控台的「網頁應用程式」複製） ======
@@ -129,7 +129,7 @@ const $ = (id) => document.getElementById(id);
 const store = {
   get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
-  clear() { try { ["name", "code", "sharing"].forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+  clear() { try { ["name", "code", "sharing", "trail"].forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
 };
 const CODE_LEN = 10;
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -221,7 +221,7 @@ function listen() {
   unsubscribe = membersRef(store.get("code")).onSnapshot((snap) => {
     members = snap.docs.map((d) => {
       const v = d.data();
-      return { uid: d.id, name: v.name || "？", lat: v.lat, lng: v.lng, battery: v.battery, updatedAt: v.updatedAt, atPlace: v.atPlace === true };
+      return { uid: d.id, name: v.name || "？", lat: v.lat, lng: v.lng, battery: v.battery, updatedAt: v.updatedAt, atPlace: v.atPlace === true, trail: parseTrail(v.trail) };
     }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
     render();
   }, (err) => {
@@ -233,6 +233,56 @@ function listen() {
       say("你已經不在這個家庭了，要用的話請重新加入。");
     }
   });
+}
+
+const TRAIL_KEEP_MS = 6 * 60 * 60 * 1000;
+let trails = {};
+
+// 雲端的路徑是「緯度、經度、時間」三個一組的一串數字
+function parseTrail(raw) {
+  if (!Array.isArray(raw)) return [];
+  const cutoff = Date.now() - TRAIL_KEEP_MS, out = [];
+  for (let i = 0; i + 2 < raw.length; i += 3) {
+    if (typeof raw[i] === "number" && typeof raw[i + 1] === "number" && raw[i + 2] >= cutoff) out.push([raw[i], raw[i + 1]]);
+  }
+  return out;
+}
+
+function darker(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.round(v * 0.72);
+  return "rgb(" + f(n >> 16 & 255) + "," + f(n >> 8 & 255) + "," + f(n & 255) + ")";
+}
+
+function drawTrail(m, color) {
+  const pts = m.trail.slice();
+  const last = pts[pts.length - 1];
+  if (!last || last[0] !== m.lat || last[1] !== m.lng) pts.push([m.lat, m.lng]);
+  let line = trails[m.uid];
+  if (pts.length < 2) {
+    if (line) { map.removeLayer(line); delete trails[m.uid]; }
+    return;
+  }
+  if (!line) {
+    trails[m.uid] = L.polyline(pts, { color: darker(color), weight: 4, opacity: 0.65, dashArray: "9 9", lineCap: "round", interactive: false }).addTo(map);
+  } else {
+    line.setLatLngs(pts);
+    line.setStyle({ color: darker(color) });
+  }
+}
+
+// 我自己走過的路（網頁開著的期間）
+function myTrail(lat, lng, now) {
+  let list = [];
+  try { list = JSON.parse(store.get("trail") || "[]"); } catch (e) { list = []; }
+  if (!Array.isArray(list) || list.length % 3 !== 0) list = [];
+  while (list.length >= 3 && now - list[2] > TRAIL_KEEP_MS) list.splice(0, 3);
+  let far = true;
+  if (list.length >= 3 && map) far = map.distance([list[list.length - 3], list[list.length - 2]], [lat, lng]) >= 30;
+  if (far) list.push(lat, lng, now);
+  while (list.length > 450) list.splice(0, 3);
+  store.set("trail", JSON.stringify(list));
+  return list;
 }
 
 function statusText(m) {
@@ -270,6 +320,7 @@ function render() {
     alive[m.uid] = true;
     const color = PALETTE[order.indexOf(m.uid) % PALETTE.length];
     const tag = m.name + "|" + color;
+    drawTrail(m, color);
     const popup = "<b>" + escapeHtml(m.name) + "</b><br>" + escapeHtml(statusText(m));
     let mk = markers[m.uid];
     if (!mk) {
@@ -283,6 +334,7 @@ function render() {
     }
   });
   Object.keys(markers).forEach((uid) => { if (!alive[uid]) { map.removeLayer(markers[uid]); delete markers[uid]; } });
+  Object.keys(trails).forEach((uid) => { if (!alive[uid]) { map.removeLayer(trails[uid]); delete trails[uid]; } });
 
   if (!fitted) {
     const pts = members.filter((m) => hasPos(m) && !isStale(m)).map((m) => [m.lat, m.lng]);
@@ -329,6 +381,7 @@ function startSharing() {
       name: store.get("name"),
       lat: pos.coords.latitude, lng: pos.coords.longitude,
       accuracy: pos.coords.accuracy, updatedAt: now,
+      trail: myTrail(pos.coords.latitude, pos.coords.longitude, now),
     }).catch((e) => {
       console.log("upload failed", e);
       if (e && (e.code === "not-found" || e.code === "permission-denied")) stopSharing();

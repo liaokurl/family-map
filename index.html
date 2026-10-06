@@ -111,7 +111,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 // 網頁版的版本號：每次更新網頁時跟著改
-const APP_VERSION = "V1.08";
+const APP_VERSION = "V1.09";
 const APP_TITLE = "四邊形の家人定位 ---車干製" + APP_VERSION + "版";
 
 // ====== Firebase 設定（從 Firebase 主控台的「網頁應用程式」複製） ======
@@ -248,11 +248,9 @@ function parseTrail(raw) {
   return out;
 }
 
-function darker(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (v) => Math.round(v * 0.72);
-  return "rgb(" + f(n >> 16 & 255) + "," + f(n >> 8 & 255) + "," + f(n & 255) + ")";
-}
+// 路徑用跟泡泡同色系、但鮮明很多的顏色，才分得出是誰的
+const TRAIL_COLORS = { "#FFB8A1": "#E8553A", "#A8DCF0": "#1E88E5", "#FFE08A": "#E09A00", "#C9B6F2": "#7E57C2", "#A6E3B8": "#2E9E5B", "#FFC2DC": "#E0508F" };
+function darker(hex) { return TRAIL_COLORS[hex] || "#6B4F3A"; }
 
 function drawTrail(m, color) {
   const pts = m.trail.slice();
@@ -264,7 +262,7 @@ function drawTrail(m, color) {
     return;
   }
   if (!line) {
-    trails[m.uid] = L.polyline(pts, { color: darker(color), weight: 4, opacity: 0.65, dashArray: "9 9", lineCap: "round", interactive: false }).addTo(map);
+    trails[m.uid] = L.polyline(pts, { color: darker(color), weight: 5, opacity: 0.9, dashArray: "9 9", lineCap: "round", interactive: false }).addTo(map);
   } else {
     line.setLatLngs(pts);
     line.setStyle({ color: darker(color) });
